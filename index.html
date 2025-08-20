@@ -3,177 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enkel Videoredigerare med Inspelning</title>
+    <title>Videoredigerare med Rendering och Delning</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FFmpeg.wasm via CDN -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* Anpassad stil för trimhandtag och playhead */
-        .handle {
-            cursor: ew-resize;
-            width: 12px;
-            height: 100%;
-            background-color: #f59e0b; /* amber-500 */
-            position: absolute;
-            top: 0;
-            z-index: 30;
-            border-radius: 4px;
-            border: 2px solid white;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .handle { cursor: ew-resize; width: 12px; height: 100%; background-color: #f59e0b; position: absolute; top: 0; z-index: 30; border-radius: 4px; border: 2px solid white; }
         .handle-left { left: -6px; }
         .handle-right { right: -6px; }
-        .playhead {
-            width: 3px;
-            height: 100%;
-            background-color: #ef4444; /* red-500 */
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 20;
-            pointer-events: none;
-        }
-        .timeline-track {
-            position: relative;
-            height: 60px;
-            background-color: #374151; /* gray-700 */
-            border-radius: 0.5rem;
-            margin-bottom: 0.5rem;
-            overflow: hidden;
-        }
-        .image-on-timeline {
-            position: absolute;
-            height: 100%;
-            z-index: 10;
-            cursor: pointer;
-            border: 2px solid #10b981; /* emerald-500 */
-        }
-        .recording-pulse {
-            animation: pulse 1.5s infinite;
-        }
+        .playhead { width: 3px; height: 100%; background-color: #ef4444; position: absolute; top: 0; left: 0; z-index: 20; pointer-events: none; }
+        .timeline-track { position: relative; min-height: 60px; background-color: #374151; border-radius: 0.5rem; margin-bottom: 0.5rem; overflow: hidden; }
+        .clip { position: absolute; height: 100%; z-index: 10; cursor: pointer; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 0.375rem; }
+        .video-clip { background-color: #2563eb; }
+        .audio-clip { background-color: #16a34a; height: 80%; top: 10%; }
+        .image-clip { border: 2px solid #10b981; }
+        .clip.selected { box-shadow: 0 0 0 3px #f59e0b; }
+        .clip-label { color: white; font-size: 12px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .recording-pulse { animation: pulse 1.5s infinite; }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
+        /* Spinner for export */
+        .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top: 4px solid #fff; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 flex flex-col h-screen overflow-hidden">
 
-    <!-- Header -->
     <header class="bg-gray-800 p-4 shadow-md z-10">
-        <h1 class="text-xl font-bold text-white">Videoredigerare med Inspelning</h1>
+        <h1 class="text-xl font-bold text-white">Videoredigerare med Rendering</h1>
     </header>
 
-    <!-- Main Content -->
     <div class="flex-grow flex p-4 gap-4 overflow-hidden">
-
-        <!-- Vänsterpanel: Media och kontroller -->
         <aside class="w-1/4 flex flex-col gap-4 bg-gray-800 p-4 rounded-lg overflow-y-auto">
             <div>
-                <h2 class="text-lg font-semibold mb-2">1. Ladda eller Spela in Media</h2>
+                <h2 class="text-lg font-semibold mb-2">1. Ladda/Spela in Media</h2>
                 <div class="space-y-3">
-                    <label class="block">
-                        <span class="text-sm font-medium text-gray-300">Videofil</span>
-                        <input type="file" id="video-input" accept="video/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-gray-300">Ljudfil</span>
-                        <input type="file" id="audio-input" accept="audio/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-500 file:text-white hover:file:bg-green-600 cursor-pointer">
-                    </label>
-                    <label class="block">
-                        <span class="text-sm font-medium text-gray-300">Stillbild</span>
-                        <input type="file" id="image-input" accept="image/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-500 file:text-white hover:file:bg-purple-600 cursor-pointer">
-                    </label>
+                    <label class="block"><span class="text-sm font-medium text-gray-300">Videofil</span><input type="file" id="video-input" accept="video/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"></label>
+                    <label class="block"><span class="text-sm font-medium text-gray-300">Ljudfil</span><input type="file" id="audio-input" accept="audio/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-500 file:text-white hover:file:bg-green-600 cursor-pointer"></label>
+                    <label class="block"><span class="text-sm font-medium text-gray-300">Stillbild</span><input type="file" id="image-input" accept="image/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-500 file:text-white hover:file:bg-purple-600 cursor-pointer"></label>
                 </div>
                 <div class="mt-4 pt-4 border-t border-gray-700">
                     <h3 class="text-md font-semibold mb-2">Spela in direkt</h3>
                     <div class="space-y-3">
                         <button id="record-audio-btn" class="w-full flex items-center justify-center gap-2 bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition duration-300">
-                            <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
                             <span id="record-audio-text">Spela in ljud</span>
                         </button>
                         <button id="record-screen-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300">
-                             <svg id="screen-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4l-2 2-2-2H2s-2 0-2-2V4zm1.5 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-13z"/></svg>
+                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4l-2 2-2-2H2s-2 0-2-2V4zm1.5 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-13z"/></svg>
                             <span id="record-screen-text">Spela in skärm</span>
                         </button>
                     </div>
                 </div>
             </div>
-            
             <div class="flex-grow">
                 <h2 class="text-lg font-semibold mb-2">Mediabibliotek</h2>
-                <div id="media-library" class="bg-gray-700 rounded-md p-2 h-48 overflow-y-auto space-y-2">
+                <div id="media-library" class="bg-gray-700 rounded-md p-2 min-h-[10rem] overflow-y-auto space-y-2">
                     <p class="text-gray-400 text-sm">Ingen media har laddats.</p>
                 </div>
             </div>
-
             <div>
                 <h2 class="text-lg font-semibold mb-2">3. Exportera</h2>
-                <button id="export-button" class="w-full bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
-                    Exportera Video
-                </button>
+                <button id="export-button" class="w-full bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>Exportera Video</button>
             </div>
         </aside>
 
-        <!-- Centerpanel: Förhandsgranskning och tidslinje -->
         <main class="w-3/4 flex flex-col gap-4">
             <div class="flex-grow bg-black rounded-lg flex items-center justify-center relative overflow-hidden">
                 <video id="video-preview" class="max-h-full max-w-full"></video>
-                <img id="image-overlay" class="absolute max-h-full max-w-full hidden pointer-events-none" src="">
                 <div id="no-video-placeholder" class="text-gray-500">Ladda en video för att börja redigera</div>
             </div>
-
             <div class="bg-gray-800 p-2 rounded-lg flex items-center gap-4">
                 <button id="play-pause-btn" class="bg-blue-500 text-white px-4 py-2 rounded-md font-semibold w-24" disabled>Spela</button>
                 <div id="time-display" class="text-sm font-mono">00:00 / 00:00</div>
+                <button id="split-btn" class="ml-auto bg-gray-600 text-white p-2 rounded-md hover:bg-gray-500" title="Dela klipp vid spelhuvudet" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-scissors" viewBox="0 0 16 16">
+                        <path d="M3.5 3.5c-.614-.884-.074-1.962.858-2.5L8 7.226 11.642 1c.932.538 1.472 1.616.858 2.5L8.81 8.61l1.556 2.661a2.5 2.5 0 1 1-.794.637L8 9.73l-1.572 2.177a2.5 2.5 0 1 1-.794-.637L7.19 8.61 3.5 3.5zm2.5 10a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0zm7 0a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0z"/>
+                    </svg>
+                </button>
             </div>
-
             <div class="bg-gray-800 p-4 rounded-lg">
                 <h2 class="text-lg font-semibold mb-2">2. Redigera på Tidslinjen</h2>
-                <div id="timeline-container" class="relative bg-gray-900 p-2 rounded-md">
+                <div id="timeline-container" class="relative bg-gray-900 p-2 rounded-md select-none">
                     <div id="timeline-ruler" class="h-6 mb-2 flex justify-between text-xs text-gray-400"></div>
-                    <div class="timeline-track">
-                        <div id="video-track" class="h-full bg-blue-600 rounded-md relative">
-                             <div id="trim-container" class="absolute top-0 left-0 h-full w-full border-x-2 border-amber-500 bg-black/30 z-20">
-                                <div class="handle handle-left" id="handle-left"></div>
-                                <div class="handle handle-right" id="handle-right"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="timeline-track">
-                        <div id="audio-track" class="h-full bg-green-600 rounded-md w-0"></div>
-                    </div>
-                    <div id="image-track" class="timeline-track bg-gray-700/50"></div>
+                    <div id="video-track" class="timeline-track"></div>
+                    <div id="audio-track" class="timeline-track"></div>
+                    <div id="image-track" class="timeline-track"></div>
                     <div id="playhead" class="playhead"></div>
                 </div>
             </div>
         </main>
     </div>
     
-    <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-gray-800 rounded-lg p-8 shadow-xl max-w-sm w-full">
+    <!-- Modals -->
+    <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div id="generic-modal" class="bg-gray-800 rounded-lg p-8 shadow-xl max-w-sm w-full">
             <h3 id="modal-title" class="text-xl font-bold mb-4">Meddelande</h3>
             <p id="modal-text" class="text-gray-300 mb-6"></p>
             <button id="modal-close" class="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-300">Stäng</button>
         </div>
+        <div id="export-modal" class="bg-gray-800 rounded-lg p-8 shadow-xl max-w-md w-full hidden">
+            <h3 class="text-xl font-bold mb-4">Exportera Video</h3>
+            <div id="export-form">
+                <label class="block mb-2">
+                    <span class="text-gray-300">Filformat</span>
+                    <select id="export-format" class="block w-full mt-1 bg-gray-700 border-gray-600 rounded-md text-white">
+                        <option value="mp4">MP4</option>
+                        <option value="webm">WebM</option>
+                        <option value="gif">GIF</option>
+                    </select>
+                </label>
+                <button id="start-export-btn" class="mt-6 w-full bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Starta Export</button>
+            </div>
+            <div id="export-progress" class="hidden">
+                <div class="flex items-center justify-center gap-4">
+                    <div class="spinner"></div>
+                    <p id="export-status" class="text-lg">Förbereder...</p>
+                </div>
+                <div class="w-full bg-gray-600 rounded-full h-2.5 mt-4">
+                    <div id="export-progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+             <a id="download-link" class="hidden mt-6 w-full text-center bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Ladda ner fil</a>
+        </div>
     </div>
 
-
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    // Hämta alla UI-element
+const { createFFmpeg, fetchFile } = FFmpeg;
+let ffmpeg;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // UI Elements
     const videoInput = document.getElementById('video-input');
     const audioInput = document.getElementById('audio-input');
     const imageInput = document.getElementById('image-input');
     const recordAudioBtn = document.getElementById('record-audio-btn');
-    const recordAudioText = document.getElementById('record-audio-text');
     const recordScreenBtn = document.getElementById('record-screen-btn');
-    const recordScreenText = document.getElementById('record-screen-text');
     const videoPreview = document.getElementById('video-preview');
-    const imageOverlay = document.getElementById('image-overlay');
-    const noVideoPlaceholder = document.getElementById('no-video-placeholder');
     const playPauseBtn = document.getElementById('play-pause-btn');
     const timeDisplay = document.getElementById('time-display');
     const playhead = document.getElementById('playhead');
@@ -181,116 +152,166 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoTrack = document.getElementById('video-track');
     const audioTrack = document.getElementById('audio-track');
     const imageTrack = document.getElementById('image-track');
-    const trimContainer = document.getElementById('trim-container');
-    const handleLeft = document.getElementById('handle-left');
-    const handleRight = document.getElementById('handle-right');
     const mediaLibrary = document.getElementById('media-library');
     const exportButton = document.getElementById('export-button');
-    const modal = document.getElementById('modal');
+    const splitBtn = document.getElementById('split-btn');
+    const modalContainer = document.getElementById('modal-container');
+    const genericModal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalText = document.getElementById('modal-text');
     const modalClose = document.getElementById('modal-close');
-
-    const audioPlayer = new Audio();
-    audioPlayer.volume = 0.5; 
-
-    // Applikationens tillstånd (state)
+    const exportModal = document.getElementById('export-modal');
+    const startExportBtn = document.getElementById('start-export-btn');
+    const exportProgress = document.getElementById('export-progress');
+    const exportStatus = document.getElementById('export-status');
+    const exportProgressBar = document.getElementById('export-progress-bar');
+    const downloadLink = document.getElementById('download-link');
+    
+    // State
     let state = {
-        video: null, audio: null, images: [], imagesOnTimeline: [], videoDuration: 0,
-        trimStart: 0, trimEnd: 0, isPlaying: false, isDragging: false, dragTarget: null,
-        // Inspelnings-state
+        media: [], // { id, name, type, blob, url }
+        timeline: {
+            video: [],
+            audio: [],
+            image: []
+        }, // { id, mediaId, start, end, clipStart }
+        totalDuration: 0,
+        isPlaying: false,
+        selectedClipId: null,
         isRecordingAudio: false, audioRecorder: null, recordedAudioChunks: [],
         isRecordingScreen: false, screenRecorder: null, recordedScreenChunks: [],
     };
 
-    // --- HJÄLPFUNKTIONER ---
-    function formatTime(seconds) {
-        const min = Math.floor(seconds / 60);
-        const sec = Math.floor(seconds % 60);
-        return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-    }
-    
-    function showModal(title, text) {
+    // --- Core Functions ---
+    const showModal = (title, text) => {
         modalTitle.textContent = title;
         modalText.textContent = text;
-        modal.classList.remove('hidden');
-    }
-    modalClose.addEventListener('click', () => modal.classList.add('hidden'));
+        genericModal.style.display = 'block';
+        exportModal.style.display = 'none';
+        modalContainer.classList.remove('hidden');
+    };
+    modalClose.addEventListener('click', () => modalContainer.classList.add('hidden'));
 
-    function updateMediaLibrary() {
+    const updateMediaLibrary = () => {
         mediaLibrary.innerHTML = '';
-        let hasMedia = false;
-        if (state.video) { hasMedia = true; addLibraryItem(state.video.name, 'video'); }
-        if (state.audio) { hasMedia = true; addLibraryItem(state.audio.name, 'audio'); }
-        state.images.forEach(img => {
-            hasMedia = true;
-            const item = addLibraryItem(img.name, 'image');
-            item.dataset.imageId = img.id;
-            item.innerHTML += `<button class="add-img-btn text-xs bg-purple-600 px-2 py-1 rounded-full ml-auto hover:bg-purple-700">Lägg till</button>`;
+        if (state.media.length === 0) {
+            mediaLibrary.innerHTML = '<p class="text-gray-400 text-sm">Ingen media har laddats.</p>';
+            return;
+        }
+
+        state.media.forEach(media => {
+            const div = document.createElement('div');
+            div.className = 'bg-gray-600 p-2 rounded-md text-sm flex items-center gap-2';
+            let icon = '';
+            if (media.type === 'video') icon = '�';
+            if (media.type === 'audio') icon = '🎵';
+            if (media.type === 'image') icon = '🖼️';
+            div.innerHTML = `<span>${icon}</span><span class="truncate flex-grow">${media.name}</span>`;
+            
+            const addButton = document.createElement('button');
+            addButton.className = 'add-media-btn text-xs bg-blue-600 px-2 py-1 rounded-full ml-auto hover:bg-blue-700';
+            addButton.textContent = 'Lägg till';
+            addButton.onclick = async () => {
+                 if (media.type === 'video') {
+                     const tempVideo = document.createElement('video');
+                     tempVideo.src = media.url;
+                     tempVideo.onloadedmetadata = () => addClipToTimeline(media.id, 'video', tempVideo.duration);
+                 } else if (media.type === 'audio') {
+                     const tempAudio = document.createElement('audio');
+                     tempAudio.src = media.url;
+                     tempAudio.onloadedmetadata = () => addClipToTimeline(media.id, 'audio', tempAudio.duration);
+                 } else if (media.type === 'image') {
+                     addClipToTimeline(media.id, 'image', 5);
+                 }
+            };
+            div.appendChild(addButton);
+            mediaLibrary.appendChild(div);
         });
-        if (!hasMedia) mediaLibrary.innerHTML = '<p class="text-gray-400 text-sm">Ingen media har laddats.</p>';
-    }
+    };
 
-    function addLibraryItem(name, type) {
-        const div = document.createElement('div');
-        div.className = 'bg-gray-600 p-2 rounded-md text-sm flex items-center gap-2';
-        let icon = '';
-        if (type === 'video') icon = '🎬';
-        if (type === 'audio') icon = '🎵';
-        if (type === 'image') icon = '🖼️';
-        div.innerHTML = `<span>${icon}</span><span class="truncate flex-grow">${name}</span>`;
-        mediaLibrary.appendChild(div);
-        return div;
-    }
-
-    // --- FILHANTERING ---
-    function loadVideo(file, fileName) {
-        const videoURL = URL.createObjectURL(file);
-        videoPreview.src = videoURL;
-        state.video = { name: fileName, url: videoURL };
-        noVideoPlaceholder.classList.add('hidden');
-
-        videoPreview.addEventListener('loadedmetadata', () => {
-            state.videoDuration = videoPreview.duration;
-            state.trimEnd = state.videoDuration;
-            timeDisplay.textContent = `${formatTime(0)} / ${formatTime(state.videoDuration)}`;
-            playPauseBtn.disabled = false;
-            exportButton.disabled = false;
-            updateTimelineRuler();
-            resetTrimHandles();
-            updateMediaLibrary();
-        }, { once: true });
-    }
-
-    function loadAudio(file, fileName) {
-        const audioURL = URL.createObjectURL(file);
-        audioPlayer.src = audioURL;
-        state.audio = { name: fileName, url: audioURL };
-        audioTrack.style.width = '100%';
+    const addMedia = (file, type) => {
+        const id = `${type}_${Date.now()}`;
+        const url = URL.createObjectURL(file);
+        state.media.push({ id, name: file.name, type, blob: file, url });
         updateMediaLibrary();
-    }
+        return id;
+    };
+    
+    const addClipToTimeline = (mediaId, trackType, duration) => {
+        const media = state.media.find(m => m.id === mediaId);
+        if (!media) return;
+        
+        const track = state.timeline[trackType];
+        const lastClip = track[track.length - 1];
+        const start = lastClip ? lastClip.end : 0;
+        const end = start + duration;
 
-    videoInput.addEventListener('change', (e) => e.target.files[0] && loadVideo(e.target.files[0], e.target.files[0].name));
-    audioInput.addEventListener('change', (e) => e.target.files[0] && loadAudio(e.target.files[0], e.target.files[0].name));
-    imageInput.addEventListener('change', (e) => {
+        const clip = {
+            id: `clip_${mediaId}_${Date.now()}`,
+            mediaId,
+            start,
+            end,
+            clipStart: 0, // Hur långt in i originalklippet vi börjar
+        };
+        track.push(clip);
+        updateTotalDuration();
+        renderTimeline();
+    };
+
+    const updateTotalDuration = () => {
+        let maxDuration = 0;
+        Object.values(state.timeline).forEach(track => {
+            track.forEach(clip => {
+                if (clip.end > maxDuration) maxDuration = clip.end;
+            });
+        });
+        state.totalDuration = maxDuration;
+        updateTimelineRuler();
+    };
+
+    // --- Event Listeners ---
+    videoInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
-            const imageURL = URL.createObjectURL(file);
-            const imageId = `img_${Date.now()}`;
-            state.images.push({ id: imageId, name: file.name, url: imageURL });
-            updateMediaLibrary();
+            const mediaId = addMedia(file, 'video');
+            const tempVideo = document.createElement('video');
+            tempVideo.src = URL.createObjectURL(file);
+            tempVideo.onloadedmetadata = () => {
+                addClipToTimeline(mediaId, 'video', tempVideo.duration);
+                if (!videoPreview.src) videoPreview.src = tempVideo.src;
+                playPauseBtn.disabled = false;
+                exportButton.disabled = false;
+                splitBtn.disabled = false;
+            };
         }
     });
     
-    // --- INSPELNINGSLOGIK ---
-    
-    // Ljudinspelning
+    audioInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if(file) {
+            const mediaId = addMedia(file, 'audio');
+            const tempAudio = document.createElement('audio');
+            tempAudio.src = URL.createObjectURL(file);
+            tempAudio.onloadedmetadata = () => addClipToTimeline(mediaId, 'audio', tempAudio.duration);
+        }
+    });
+
+    imageInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if(file) {
+            const mediaId = addMedia(file, 'image');
+            addClipToTimeline(mediaId, 'image', 5); // Default 5s duration
+        }
+    });
+
+    // --- Recording Logic ---
     recordAudioBtn.addEventListener('click', async () => {
         if (state.isRecordingAudio) {
-            state.audioRecorder.stop();
+            if (state.audioRecorder) state.audioRecorder.stop();
         } else {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const recordAudioText = document.getElementById('record-audio-text');
                 state.isRecordingAudio = true;
                 state.recordedAudioChunks = [];
                 state.audioRecorder = new MediaRecorder(stream);
@@ -300,8 +321,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.audioRecorder.onstop = () => {
                     const audioBlob = new Blob(state.recordedAudioChunks, { type: 'audio/webm' });
                     const fileName = `inspelning_${new Date().toLocaleTimeString()}.webm`;
-                    loadAudio(audioBlob, fileName);
-                    
+                    const mediaId = addMedia(new File([audioBlob], fileName, {type: 'audio/webm'}), 'audio');
+                    const tempAudio = document.createElement('audio');
+                    tempAudio.src = URL.createObjectURL(audioBlob);
+                    tempAudio.onloadedmetadata = () => addClipToTimeline(mediaId, 'audio', tempAudio.duration);
+
                     stream.getTracks().forEach(track => track.stop());
                     state.isRecordingAudio = false;
                     recordAudioText.textContent = 'Spela in ljud';
@@ -318,13 +342,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Skärminspelning
     recordScreenBtn.addEventListener('click', async () => {
         if (state.isRecordingScreen) {
-            state.screenRecorder.stop();
+            if(state.screenRecorder) state.screenRecorder.stop();
         } else {
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                const recordScreenText = document.getElementById('record-screen-text');
                 state.isRecordingScreen = true;
                 state.recordedScreenChunks = [];
                 state.screenRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
@@ -334,7 +358,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.screenRecorder.onstop = () => {
                     const screenBlob = new Blob(state.recordedScreenChunks, { type: 'video/webm' });
                     const fileName = `skärminspelning_${new Date().toLocaleTimeString()}.webm`;
-                    loadVideo(screenBlob, fileName);
+                    const mediaId = addMedia(new File([screenBlob], fileName, {type: 'video/webm'}), 'video');
+                    const tempVideo = document.createElement('video');
+                    tempVideo.src = URL.createObjectURL(screenBlob);
+                    tempVideo.onloadedmetadata = () => {
+                        addClipToTimeline(mediaId, 'video', tempVideo.duration);
+                        if (!videoPreview.src) videoPreview.src = tempVideo.src;
+                        playPauseBtn.disabled = false;
+                        exportButton.disabled = false;
+                        splitBtn.disabled = false;
+                    };
                     
                     stream.getTracks().forEach(track => track.stop());
                     state.isRecordingScreen = false;
@@ -356,159 +389,268 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- UPPSPELNINGSLOGIK ---
-    function togglePlayPause() {
-        if (!state.videoDuration) return;
-        if (state.isPlaying) {
-            videoPreview.pause();
-            if (state.audio) audioPlayer.pause();
-        } else {
-            if (videoPreview.currentTime >= state.trimEnd) videoPreview.currentTime = state.trimStart;
-            videoPreview.play();
-            if (state.audio) {
-                audioPlayer.currentTime = videoPreview.currentTime;
-                audioPlayer.play();
-            }
-        }
-        state.isPlaying = !state.isPlaying;
-        playPauseBtn.textContent = state.isPlaying ? 'Pausa' : 'Spela';
-    }
-    playPauseBtn.addEventListener('click', togglePlayPause);
 
-    videoPreview.addEventListener('timeupdate', () => {
-        const currentTime = videoPreview.currentTime;
-        const progress = (currentTime / state.videoDuration) * 100;
-        playhead.style.left = `${progress}%`;
-        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(state.videoDuration)}`;
+    // --- Timeline Rendering ---
+    const renderTimeline = () => {
+        videoTrack.innerHTML = '';
+        audioTrack.innerHTML = '';
+        imageTrack.innerHTML = '';
 
-        if (currentTime < state.trimStart || currentTime >= state.trimEnd) {
-            if (state.isPlaying) {
-                videoPreview.currentTime = state.trimStart;
-                if (state.audio) audioPlayer.currentTime = state.trimStart;
-            }
-        }
-        
-        const activeImage = state.imagesOnTimeline.find(img => currentTime >= img.start && currentTime < (img.start + img.duration));
-        if (activeImage) {
-            const imageInfo = state.images.find(i => i.id === activeImage.id);
-            if (imageInfo) {
-                imageOverlay.src = imageInfo.url;
-                imageOverlay.classList.remove('hidden');
-            }
-        } else {
-            imageOverlay.classList.add('hidden');
-        }
-    });
+        Object.entries(state.timeline).forEach(([trackType, clips]) => {
+            const trackEl = document.getElementById(`${trackType}-track`);
+            clips.forEach(clip => {
+                const media = state.media.find(m => m.id === clip.mediaId);
+                if (!media) return; // Skip if media not found
+                const el = document.createElement('div');
+                el.className = `clip ${trackType}-clip`;
+                el.dataset.id = clip.id;
+                el.style.left = `${(clip.start / state.totalDuration) * 100}%`;
+                el.style.width = `${((clip.end - clip.start) / state.totalDuration) * 100}%`;
+                
+                const label = document.createElement('span');
+                label.className = 'clip-label';
+                label.textContent = media.name;
+                el.appendChild(label);
 
-    videoPreview.addEventListener('pause', () => { if (state.isPlaying) togglePlayPause(); });
-    videoPreview.addEventListener('play', () => { if (!state.isPlaying) togglePlayPause(); });
+                if (clip.id === state.selectedClipId) el.classList.add('selected');
 
-    // --- TIDSLINJE-LOGIK ---
-    function updateTimelineRuler() {
-        timelineRuler.innerHTML = '';
-        const interval = Math.max(1, Math.floor(state.videoDuration / 10));
-        for (let i = 0; i <= state.videoDuration; i += interval) {
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    state.selectedClipId = clip.id;
+                    renderTimeline();
+                });
+                
+                trackEl.appendChild(el);
+            });
+        });
+    };
+    
+    const updateTimelineRuler = () => {
+        const ruler = document.getElementById('timeline-ruler');
+        ruler.innerHTML = '';
+        if (state.totalDuration === 0) return;
+        const interval = Math.max(1, Math.floor(state.totalDuration / 10));
+        for (let i = 0; i <= state.totalDuration; i += interval) {
             const marker = document.createElement('div');
             marker.textContent = formatTime(i);
-            timelineRuler.appendChild(marker);
+            ruler.appendChild(marker);
         }
-    }
+    };
 
-    timelineContainer.addEventListener('click', (e) => {
-        if (e.target.classList.contains('handle') || e.target.classList.contains('image-on-timeline')) return;
-        const timelineRect = timelineContainer.getBoundingClientRect();
-        const clickX = e.clientX - timelineRect.left;
-        const progress = clickX / timelineRect.width;
-        const newTime = progress * state.videoDuration;
-        if (newTime >= state.trimStart && newTime <= state.trimEnd) videoPreview.currentTime = newTime;
+    // --- Playback ---
+    let animationFrameId;
+    const playLoop = () => {
+        if (!state.isPlaying) return;
+        
+        const currentTime = videoPreview.currentTime;
+        const progress = state.totalDuration > 0 ? (currentTime / state.totalDuration) * 100 : 0;
+        playhead.style.left = `${progress}%`;
+        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(state.totalDuration)}`;
+
+        animationFrameId = requestAnimationFrame(playLoop);
+    };
+
+    const togglePlayPause = () => {
+        if (videoPreview.paused) {
+            videoPreview.play();
+            state.isPlaying = true;
+            playLoop();
+        } else {
+            videoPreview.pause();
+            state.isPlaying = false;
+            cancelAnimationFrame(animationFrameId);
+        }
+        playPauseBtn.textContent = state.isPlaying ? 'Pausa' : 'Spela';
+    };
+    playPauseBtn.addEventListener('click', togglePlayPause);
+    
+    videoPreview.addEventListener('timeupdate', () => {
+        const currentTime = videoPreview.currentTime;
+        const progress = state.totalDuration > 0 ? (currentTime / state.totalDuration) * 100 : 0;
+        playhead.style.left = `${progress}%`;
+        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(state.totalDuration)}`;
     });
     
-    // --- TRIMNINGSLOGIK ---
-    function resetTrimHandles() {
-        trimContainer.style.left = '0%';
-        trimContainer.style.width = '100%';
-        state.trimStart = 0;
-        state.trimEnd = state.videoDuration;
-    }
-
-    function handleDrag(e) {
-        if (!state.isDragging) return;
-        e.preventDefault();
-        const timelineRect = videoTrack.getBoundingClientRect();
-        let newX = e.clientX - timelineRect.left;
-        let progress = Math.max(0, Math.min(1, newX / timelineRect.width));
-        if (state.dragTarget === handleLeft) {
-            const endProgress = state.trimEnd / state.videoDuration;
-            if (progress >= endProgress) progress = endProgress - 0.01;
-            state.trimStart = progress * state.videoDuration;
-        } else if (state.dragTarget === handleRight) {
-            const startProgress = state.trimStart / state.videoDuration;
-            if (progress <= startProgress) progress = startProgress + 0.01;
-            state.trimEnd = progress * state.videoDuration;
+    timelineContainer.addEventListener('click', (e) => {
+        if (e.target.closest('.clip')) return;
+        const rect = timelineContainer.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const progress = x / rect.width;
+        const newTime = progress * state.totalDuration;
+        
+        const activeVideoClip = state.timeline.video.find(c => newTime >= c.start && newTime < c.end);
+        if (activeVideoClip) {
+            const media = state.media.find(m => m.id === activeVideoClip.mediaId);
+            const timeInClip = newTime - activeVideoClip.start + activeVideoClip.clipStart;
+            
+            if (videoPreview.src !== media.url) {
+                videoPreview.src = media.url;
+            }
+            videoPreview.currentTime = timeInClip;
         }
-        updateTrimUI();
-    }
+    });
 
-    function updateTrimUI() {
-        const startPercent = (state.trimStart / state.videoDuration) * 100;
-        const endPercent = (state.trimEnd / state.videoDuration) * 100;
-        trimContainer.style.left = `${startPercent}%`;
-        trimContainer.style.width = `${endPercent - startPercent}%`;
-    }
+    // --- Split Functionality ---
+    splitBtn.addEventListener('click', () => {
+        if (!state.selectedClipId) {
+            showModal('Inget klipp valt', 'Klicka på ett klipp i tidslinjen för att välja det först.');
+            return;
+        }
 
-    [handleLeft, handleRight].forEach(handle => {
-        handle.addEventListener('mousedown', (e) => {
-            state.isDragging = true;
-            state.dragTarget = e.target;
-            document.body.style.cursor = 'ew-resize';
+        const currentTime = (playhead.offsetLeft / timelineContainer.clientWidth) * state.totalDuration;
+
+        Object.entries(state.timeline).forEach(([type, clips]) => {
+            const clipIndex = clips.findIndex(c => c.id === state.selectedClipId);
+            if (clipIndex > -1) {
+                const clip = clips[clipIndex];
+                if (currentTime > clip.start && currentTime < clip.end) {
+                    const timeInClip = currentTime - clip.start;
+                    
+                    const newClip = {
+                        ...clip,
+                        id: `clip_${clip.mediaId}_${Date.now()}`,
+                        start: currentTime,
+                        clipStart: clip.clipStart + timeInClip,
+                    };
+                    
+                    clip.end = currentTime;
+                    
+                    clips.splice(clipIndex + 1, 0, newClip);
+                    
+                    updateTotalDuration();
+                    renderTimeline();
+                }
+            }
         });
     });
 
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', () => {
-        if (state.isDragging) {
-            if (videoPreview.currentTime < state.trimStart) videoPreview.currentTime = state.trimStart;
-            if (videoPreview.currentTime > state.trimEnd) videoPreview.currentTime = state.trimEnd;
+    // --- Export ---
+    const initFFmpeg = async () => {
+        if (!ffmpeg) {
+            ffmpeg = createFFmpeg({ 
+                log: true,
+                corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+            });
+            ffmpeg.setLogger(({ type, message }) => {
+                console.log(type, message);
+                exportStatus.textContent = message.split('\n')[0];
+            });
+            ffmpeg.setProgress(({ ratio }) => {
+                exportProgressBar.style.width = `${ratio * 100}%`;
+            });
         }
-        state.isDragging = false;
-        state.dragTarget = null;
-        document.body.style.cursor = 'default';
-    });
-
-    // --- BILDHANTERING PÅ TIDSLINJE ---
-    mediaLibrary.addEventListener('click', (e) => {
-        if (e.target.classList.contains('add-img-btn')) {
-            if (!state.video) {
-                showModal('Inget videoklipp', 'Du måste ladda ett videoklipp innan du kan lägga till bilder på tidslinjen.');
-                return;
-            }
-            const imageId = e.target.parentElement.dataset.imageId;
-            addImageToTimeline(imageId, videoPreview.currentTime);
+        if (!ffmpeg.isLoaded()) {
+            exportStatus.textContent = 'Laddar FFmpeg-kärnan...';
+            await ffmpeg.load();
         }
-    });
+    };
 
-    function addImageToTimeline(imageId, startTime) {
-        const imageInfo = state.images.find(i => i.id === imageId);
-        if (!imageInfo) return;
-        const duration = 5;
-        const start = Math.max(state.trimStart, Math.min(startTime, state.trimEnd - duration));
-        const imgElement = document.createElement('img');
-        imgElement.src = imageInfo.url;
-        imgElement.className = 'image-on-timeline';
-        imgElement.dataset.timelineId = `tl_${imageId}_${Date.now()}`;
-        imgElement.style.left = `${(start / state.videoDuration) * 100}%`;
-        imgElement.style.width = `${(duration / state.videoDuration) * 100}%`;
-        imageTrack.appendChild(imgElement);
-        state.imagesOnTimeline.push({ id: imageId, start: start, duration: duration, element: imgElement });
-    }
-    
-    // --- EXPORT ---
     exportButton.addEventListener('click', () => {
-        showModal('Exportfunktion', 'Detta är en demonstration. Att faktiskt rendera och exportera en video är en mycket beräkningsintensiv process som normalt kräver specialiserade bibliotek (t.ex. FFmpeg via WebAssembly).');
+        genericModal.style.display = 'none';
+        exportModal.style.display = 'block';
+        modalContainer.classList.remove('hidden');
+        document.getElementById('export-form').style.display = 'block';
+        exportProgress.style.display = 'none';
+        downloadLink.style.display = 'none';
     });
+
+    startExportBtn.addEventListener('click', async () => {
+        document.getElementById('export-form').style.display = 'none';
+        exportProgress.style.display = 'block';
+        downloadLink.style.display = 'none';
+        exportProgressBar.style.width = '0%';
+
+        try {
+            await initFFmpeg();
+            
+            exportStatus.textContent = 'Läser in mediafiler...';
+            
+            // Write all media files to FFmpeg's virtual file system
+            for (const media of state.media) {
+                const extension = media.name.split('.').pop();
+                const fileName = `${media.id}.${extension}`;
+                ffmpeg.FS('writeFile', fileName, await fetchFile(media.blob));
+            }
+
+            const format = document.getElementById('export-format').value;
+            const outputFilename = `output.${format}`;
+            
+            let filterComplex = '';
+            const inputs = [];
+            let mapVideo = '';
+            let mapAudio = '';
+            
+            let currentInputIndex = 0;
+
+            // Process video clips
+            const videoClips = state.timeline.video;
+            if (videoClips.length > 0) {
+                videoClips.forEach(clip => {
+                    const media = state.media.find(m => m.id === clip.mediaId);
+                    const extension = media.name.split('.').pop();
+                    const fileName = `${media.id}.${extension}`;
+                    inputs.push('-i', fileName);
+                });
+                videoClips.forEach((clip, i) => {
+                    filterComplex += `[${i}:v]trim=start=${clip.clipStart}:duration=${clip.end - clip.start},setpts=PTS-STARTPTS[v${i}]; `;
+                });
+                const videoConcat = videoClips.map((_, i) => `[v${i}]`).join('');
+                filterComplex += `${videoConcat}concat=n=${videoClips.length}:v=1:a=0[outv]; `;
+                mapVideo = '[outv]';
+            }
+
+            // Process audio clips
+            const audioClips = state.timeline.audio;
+            if (audioClips.length > 0) {
+                 audioClips.forEach(clip => {
+                    const media = state.media.find(m => m.id === clip.mediaId);
+                    const extension = media.name.split('.').pop();
+                    const fileName = `${media.id}.${extension}`;
+                    inputs.push('-i', fileName);
+                });
+                audioClips.forEach((clip, i) => {
+                    filterComplex += `[${videoClips.length + i}:a]atrim=start=${clip.clipStart}:duration=${clip.end - clip.start},asetpts=PTS-STARTPTS[a${i}]; `;
+                });
+                const audioConcat = audioClips.map((_, i) => `[a${i}]`).join('');
+                filterComplex += `${audioConcat}concat=n=${audioClips.length}:v=0:a=1[outa]; `;
+                mapAudio = '[outa]';
+            }
+
+            const command = [...inputs];
+            command.push('-filter_complex', filterComplex);
+            if (mapVideo) command.push('-map', mapVideo);
+            if (mapAudio) command.push('-map', mapAudio);
+            if (format === 'gif') {
+                command.push('-f', 'gif');
+            } else if (mapVideo && !mapAudio) {
+                // If there's video but no audio, add a silent audio track for compatibility
+                command.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100', '-shortest');
+            }
+            command.push(outputFilename);
+
+            exportStatus.textContent = 'Renderar video...';
+            await ffmpeg.run(...command.filter(c => c));
+
+            exportStatus.textContent = 'Klart!';
+            const data = ffmpeg.FS('readFile', outputFilename);
+            const url = URL.createObjectURL(new Blob([data.buffer], { type: format === 'mp4' ? 'video/mp4' : (format === 'webm' ? 'video/webm' : 'image/gif') }));
+            
+            downloadLink.href = url;
+            downloadLink.download = outputFilename;
+            downloadLink.style.display = 'block';
+
+        } catch (error) {
+            console.error(error);
+            showModal('Exportfel', 'Något gick fel under exporten. Kontrollera konsolen för mer information. Detta kan hända om klippen är för komplexa.');
+        }
+    });
+
+    // --- Init ---
+    updateMediaLibrary();
+    updateTotalDuration();
+    renderTimeline();
 });
 </script>
 
 </body>
 </html>
-
