@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enkel Videoredigerare med Inspelning</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Anpassad stil för trimhandtag och playhead */
+        .handle {
+            cursor: ew-resize;
+            width: 12px;
+            height: 100%;
+            background-color: #f59e0b; /* amber-500 */
+            position: absolute;
+            top: 0;
+            z-index: 30;
+            border-radius: 4px;
+            border: 2px solid white;
+        }
+        .handle-left { left: -6px; }
+        .handle-right { right: -6px; }
+        .playhead {
+            width: 3px;
+            height: 100%;
+            background-color: #ef4444; /* red-500 */
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .timeline-track {
+            position: relative;
+            height: 60px;
+            background-color: #374151; /* gray-700 */
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            overflow: hidden;
+        }
+        .image-on-timeline {
+            position: absolute;
+            height: 100%;
+            z-index: 10;
+            cursor: pointer;
+            border: 2px solid #10b981; /* emerald-500 */
+        }
+        .recording-pulse {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col h-screen overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 p-4 shadow-md z-10">
+        <h1 class="text-xl font-bold text-white">Videoredigerare med Inspelning</h1>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex-grow flex p-4 gap-4 overflow-hidden">
+
+        <!-- Vänsterpanel: Media och kontroller -->
+        <aside class="w-1/4 flex flex-col gap-4 bg-gray-800 p-4 rounded-lg overflow-y-auto">
+            <div>
+                <h2 class="text-lg font-semibold mb-2">1. Ladda eller Spela in Media</h2>
+                <div class="space-y-3">
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-300">Videofil</span>
+                        <input type="file" id="video-input" accept="video/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-300">Ljudfil</span>
+                        <input type="file" id="audio-input" accept="audio/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-500 file:text-white hover:file:bg-green-600 cursor-pointer">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-300">Stillbild</span>
+                        <input type="file" id="image-input" accept="image/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-500 file:text-white hover:file:bg-purple-600 cursor-pointer">
+                    </label>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-700">
+                    <h3 class="text-md font-semibold mb-2">Spela in direkt</h3>
+                    <div class="space-y-3">
+                        <button id="record-audio-btn" class="w-full flex items-center justify-center gap-2 bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition duration-300">
+                            <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
+                            <span id="record-audio-text">Spela in ljud</span>
+                        </button>
+                        <button id="record-screen-btn" class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300">
+                             <svg id="screen-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4l-2 2-2-2H2s-2 0-2-2V4zm1.5 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-13z"/></svg>
+                            <span id="record-screen-text">Spela in skärm</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-grow">
+                <h2 class="text-lg font-semibold mb-2">Mediabibliotek</h2>
+                <div id="media-library" class="bg-gray-700 rounded-md p-2 h-48 overflow-y-auto space-y-2">
+                    <p class="text-gray-400 text-sm">Ingen media har laddats.</p>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="text-lg font-semibold mb-2">3. Exportera</h2>
+                <button id="export-button" class="w-full bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
+                    Exportera Video
+                </button>
+            </div>
+        </aside>
+
+        <!-- Centerpanel: Förhandsgranskning och tidslinje -->
+        <main class="w-3/4 flex flex-col gap-4">
+            <div class="flex-grow bg-black rounded-lg flex items-center justify-center relative overflow-hidden">
+                <video id="video-preview" class="max-h-full max-w-full"></video>
+                <img id="image-overlay" class="absolute max-h-full max-w-full hidden pointer-events-none" src="">
+                <div id="no-video-placeholder" class="text-gray-500">Ladda en video för att börja redigera</div>
+            </div>
+
+            <div class="bg-gray-800 p-2 rounded-lg flex items-center gap-4">
+                <button id="play-pause-btn" class="bg-blue-500 text-white px-4 py-2 rounded-md font-semibold w-24" disabled>Spela</button>
+                <div id="time-display" class="text-sm font-mono">00:00 / 00:00</div>
+            </div>
+
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h2 class="text-lg font-semibold mb-2">2. Redigera på Tidslinjen</h2>
+                <div id="timeline-container" class="relative bg-gray-900 p-2 rounded-md">
+                    <div id="timeline-ruler" class="h-6 mb-2 flex justify-between text-xs text-gray-400"></div>
+                    <div class="timeline-track">
+                        <div id="video-track" class="h-full bg-blue-600 rounded-md relative">
+                             <div id="trim-container" class="absolute top-0 left-0 h-full w-full border-x-2 border-amber-500 bg-black/30 z-20">
+                                <div class="handle handle-left" id="handle-left"></div>
+                                <div class="handle handle-right" id="handle-right"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="timeline-track">
+                        <div id="audio-track" class="h-full bg-green-600 rounded-md w-0"></div>
+                    </div>
+                    <div id="image-track" class="timeline-track bg-gray-700/50"></div>
+                    <div id="playhead" class="playhead"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg p-8 shadow-xl max-w-sm w-full">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Meddelande</h3>
+            <p id="modal-text" class="text-gray-300 mb-6"></p>
+            <button id="modal-close" class="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-300">Stäng</button>
+        </div>
+    </div>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Hämta alla UI-element
+    const videoInput = document.getElementById('video-input');
+    const audioInput = document.getElementById('audio-input');
+    const imageInput = document.getElementById('image-input');
+    const recordAudioBtn = document.getElementById('record-audio-btn');
+    const recordAudioText = document.getElementById('record-audio-text');
+    const recordScreenBtn = document.getElementById('record-screen-btn');
+    const recordScreenText = document.getElementById('record-screen-text');
+    const videoPreview = document.getElementById('video-preview');
+    const imageOverlay = document.getElementById('image-overlay');
+    const noVideoPlaceholder = document.getElementById('no-video-placeholder');
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const timeDisplay = document.getElementById('time-display');
+    const playhead = document.getElementById('playhead');
+    const timelineContainer = document.getElementById('timeline-container');
+    const videoTrack = document.getElementById('video-track');
+    const audioTrack = document.getElementById('audio-track');
+    const imageTrack = document.getElementById('image-track');
+    const trimContainer = document.getElementById('trim-container');
+    const handleLeft = document.getElementById('handle-left');
+    const handleRight = document.getElementById('handle-right');
+    const mediaLibrary = document.getElementById('media-library');
+    const exportButton = document.getElementById('export-button');
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalText = document.getElementById('modal-text');
+    const modalClose = document.getElementById('modal-close');
+
+    const audioPlayer = new Audio();
+    audioPlayer.volume = 0.5; 
+
+    // Applikationens tillstånd (state)
+    let state = {
+        video: null, audio: null, images: [], imagesOnTimeline: [], videoDuration: 0,
+        trimStart: 0, trimEnd: 0, isPlaying: false, isDragging: false, dragTarget: null,
+        // Inspelnings-state
+        isRecordingAudio: false, audioRecorder: null, recordedAudioChunks: [],
+        isRecordingScreen: false, screenRecorder: null, recordedScreenChunks: [],
+    };
+
+    // --- HJÄLPFUNKTIONER ---
+    function formatTime(seconds) {
+        const min = Math.floor(seconds / 60);
+        const sec = Math.floor(seconds % 60);
+        return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    }
+    
+    function showModal(title, text) {
+        modalTitle.textContent = title;
+        modalText.textContent = text;
+        modal.classList.remove('hidden');
+    }
+    modalClose.addEventListener('click', () => modal.classList.add('hidden'));
+
+    function updateMediaLibrary() {
+        mediaLibrary.innerHTML = '';
+        let hasMedia = false;
+        if (state.video) { hasMedia = true; addLibraryItem(state.video.name, 'video'); }
+        if (state.audio) { hasMedia = true; addLibraryItem(state.audio.name, 'audio'); }
+        state.images.forEach(img => {
+            hasMedia = true;
+            const item = addLibraryItem(img.name, 'image');
+            item.dataset.imageId = img.id;
+            item.innerHTML += `<button class="add-img-btn text-xs bg-purple-600 px-2 py-1 rounded-full ml-auto hover:bg-purple-700">Lägg till</button>`;
+        });
+        if (!hasMedia) mediaLibrary.innerHTML = '<p class="text-gray-400 text-sm">Ingen media har laddats.</p>';
+    }
+
+    function addLibraryItem(name, type) {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-600 p-2 rounded-md text-sm flex items-center gap-2';
+        let icon = '';
+        if (type === 'video') icon = '🎬';
+        if (type === 'audio') icon = '🎵';
+        if (type === 'image') icon = '🖼️';
+        div.innerHTML = `<span>${icon}</span><span class="truncate flex-grow">${name}</span>`;
+        mediaLibrary.appendChild(div);
+        return div;
+    }
+
+    // --- FILHANTERING ---
+    function loadVideo(file, fileName) {
+        const videoURL = URL.createObjectURL(file);
+        videoPreview.src = videoURL;
+        state.video = { name: fileName, url: videoURL };
+        noVideoPlaceholder.classList.add('hidden');
+
+        videoPreview.addEventListener('loadedmetadata', () => {
+            state.videoDuration = videoPreview.duration;
+            state.trimEnd = state.videoDuration;
+            timeDisplay.textContent = `${formatTime(0)} / ${formatTime(state.videoDuration)}`;
+            playPauseBtn.disabled = false;
+            exportButton.disabled = false;
+            updateTimelineRuler();
+            resetTrimHandles();
+            updateMediaLibrary();
+        }, { once: true });
+    }
+
+    function loadAudio(file, fileName) {
+        const audioURL = URL.createObjectURL(file);
+        audioPlayer.src = audioURL;
+        state.audio = { name: fileName, url: audioURL };
+        audioTrack.style.width = '100%';
+        updateMediaLibrary();
+    }
+
+    videoInput.addEventListener('change', (e) => e.target.files[0] && loadVideo(e.target.files[0], e.target.files[0].name));
+    audioInput.addEventListener('change', (e) => e.target.files[0] && loadAudio(e.target.files[0], e.target.files[0].name));
+    imageInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const imageURL = URL.createObjectURL(file);
+            const imageId = `img_${Date.now()}`;
+            state.images.push({ id: imageId, name: file.name, url: imageURL });
+            updateMediaLibrary();
+        }
+    });
+    
+    // --- INSPELNINGSLOGIK ---
+    
+    // Ljudinspelning
+    recordAudioBtn.addEventListener('click', async () => {
+        if (state.isRecordingAudio) {
+            state.audioRecorder.stop();
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                state.isRecordingAudio = true;
+                state.recordedAudioChunks = [];
+                state.audioRecorder = new MediaRecorder(stream);
+                
+                state.audioRecorder.ondataavailable = e => state.recordedAudioChunks.push(e.data);
+                
+                state.audioRecorder.onstop = () => {
+                    const audioBlob = new Blob(state.recordedAudioChunks, { type: 'audio/webm' });
+                    const fileName = `inspelning_${new Date().toLocaleTimeString()}.webm`;
+                    loadAudio(audioBlob, fileName);
+                    
+                    stream.getTracks().forEach(track => track.stop());
+                    state.isRecordingAudio = false;
+                    recordAudioText.textContent = 'Spela in ljud';
+                    recordAudioBtn.classList.remove('recording-pulse');
+                };
+                
+                state.audioRecorder.start();
+                recordAudioText.textContent = 'Stoppa inspelning';
+                recordAudioBtn.classList.add('recording-pulse');
+            } catch (err) {
+                console.error("Fel vid ljudinspelning:", err);
+                showModal('Fel', 'Kunde inte starta ljudinspelning. Kontrollera mikrofonbehörigheter.');
+            }
+        }
+    });
+
+    // Skärminspelning
+    recordScreenBtn.addEventListener('click', async () => {
+        if (state.isRecordingScreen) {
+            state.screenRecorder.stop();
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                state.isRecordingScreen = true;
+                state.recordedScreenChunks = [];
+                state.screenRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                
+                state.screenRecorder.ondataavailable = e => state.recordedScreenChunks.push(e.data);
+                
+                state.screenRecorder.onstop = () => {
+                    const screenBlob = new Blob(state.recordedScreenChunks, { type: 'video/webm' });
+                    const fileName = `skärminspelning_${new Date().toLocaleTimeString()}.webm`;
+                    loadVideo(screenBlob, fileName);
+                    
+                    stream.getTracks().forEach(track => track.stop());
+                    state.isRecordingScreen = false;
+                    recordScreenText.textContent = 'Spela in skärm';
+                    recordScreenBtn.classList.remove('recording-pulse');
+                };
+                
+                state.screenRecorder.start();
+                recordScreenText.textContent = 'Stoppa inspelning';
+                recordScreenBtn.classList.add('recording-pulse');
+            } catch (err) {
+                console.error("Fel vid skärminspelning:", err);
+                if (err.name === 'NotAllowedError') {
+                     showModal('Behörighet Nekad för Skärminspelning', 'Webbläsaren blockerar skärminspelning i denna inbäddade miljö (iframe) av säkerhetsskäl. Detta är en begränsning i plattformen, inte ett fel i koden. För att använda den här funktionen, spara koden som en HTML-fil och öppna den direkt i din webbläsare.');
+                } else {
+                    showModal('Avbruten', 'Skärminspelningen startades inte eller avbröts av en okänd anledning.');
+                }
+            }
+        }
+    });
+
+    // --- UPPSPELNINGSLOGIK ---
+    function togglePlayPause() {
+        if (!state.videoDuration) return;
+        if (state.isPlaying) {
+            videoPreview.pause();
+            if (state.audio) audioPlayer.pause();
+        } else {
+            if (videoPreview.currentTime >= state.trimEnd) videoPreview.currentTime = state.trimStart;
+            videoPreview.play();
+            if (state.audio) {
+                audioPlayer.currentTime = videoPreview.currentTime;
+                audioPlayer.play();
+            }
+        }
+        state.isPlaying = !state.isPlaying;
+        playPauseBtn.textContent = state.isPlaying ? 'Pausa' : 'Spela';
+    }
+    playPauseBtn.addEventListener('click', togglePlayPause);
+
+    videoPreview.addEventListener('timeupdate', () => {
+        const currentTime = videoPreview.currentTime;
+        const progress = (currentTime / state.videoDuration) * 100;
+        playhead.style.left = `${progress}%`;
+        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(state.videoDuration)}`;
+
+        if (currentTime < state.trimStart || currentTime >= state.trimEnd) {
+            if (state.isPlaying) {
+                videoPreview.currentTime = state.trimStart;
+                if (state.audio) audioPlayer.currentTime = state.trimStart;
+            }
+        }
+        
+        const activeImage = state.imagesOnTimeline.find(img => currentTime >= img.start && currentTime < (img.start + img.duration));
+        if (activeImage) {
+            const imageInfo = state.images.find(i => i.id === activeImage.id);
+            if (imageInfo) {
+                imageOverlay.src = imageInfo.url;
+                imageOverlay.classList.remove('hidden');
+            }
+        } else {
+            imageOverlay.classList.add('hidden');
+        }
+    });
+
+    videoPreview.addEventListener('pause', () => { if (state.isPlaying) togglePlayPause(); });
+    videoPreview.addEventListener('play', () => { if (!state.isPlaying) togglePlayPause(); });
+
+    // --- TIDSLINJE-LOGIK ---
+    function updateTimelineRuler() {
+        timelineRuler.innerHTML = '';
+        const interval = Math.max(1, Math.floor(state.videoDuration / 10));
+        for (let i = 0; i <= state.videoDuration; i += interval) {
+            const marker = document.createElement('div');
+            marker.textContent = formatTime(i);
+            timelineRuler.appendChild(marker);
+        }
+    }
+
+    timelineContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('handle') || e.target.classList.contains('image-on-timeline')) return;
+        const timelineRect = timelineContainer.getBoundingClientRect();
+        const clickX = e.clientX - timelineRect.left;
+        const progress = clickX / timelineRect.width;
+        const newTime = progress * state.videoDuration;
+        if (newTime >= state.trimStart && newTime <= state.trimEnd) videoPreview.currentTime = newTime;
+    });
+    
+    // --- TRIMNINGSLOGIK ---
+    function resetTrimHandles() {
+        trimContainer.style.left = '0%';
+        trimContainer.style.width = '100%';
+        state.trimStart = 0;
+        state.trimEnd = state.videoDuration;
+    }
+
+    function handleDrag(e) {
+        if (!state.isDragging) return;
+        e.preventDefault();
+        const timelineRect = videoTrack.getBoundingClientRect();
+        let newX = e.clientX - timelineRect.left;
+        let progress = Math.max(0, Math.min(1, newX / timelineRect.width));
+        if (state.dragTarget === handleLeft) {
+            const endProgress = state.trimEnd / state.videoDuration;
+            if (progress >= endProgress) progress = endProgress - 0.01;
+            state.trimStart = progress * state.videoDuration;
+        } else if (state.dragTarget === handleRight) {
+            const startProgress = state.trimStart / state.videoDuration;
+            if (progress <= startProgress) progress = startProgress + 0.01;
+            state.trimEnd = progress * state.videoDuration;
+        }
+        updateTrimUI();
+    }
+
+    function updateTrimUI() {
+        const startPercent = (state.trimStart / state.videoDuration) * 100;
+        const endPercent = (state.trimEnd / state.videoDuration) * 100;
+        trimContainer.style.left = `${startPercent}%`;
+        trimContainer.style.width = `${endPercent - startPercent}%`;
+    }
+
+    [handleLeft, handleRight].forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+            state.isDragging = true;
+            state.dragTarget = e.target;
+            document.body.style.cursor = 'ew-resize';
+        });
+    });
+
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', () => {
+        if (state.isDragging) {
+            if (videoPreview.currentTime < state.trimStart) videoPreview.currentTime = state.trimStart;
+            if (videoPreview.currentTime > state.trimEnd) videoPreview.currentTime = state.trimEnd;
+        }
+        state.isDragging = false;
+        state.dragTarget = null;
+        document.body.style.cursor = 'default';
+    });
+
+    // --- BILDHANTERING PÅ TIDSLINJE ---
+    mediaLibrary.addEventListener('click', (e) => {
+        if (e.target.classList.contains('add-img-btn')) {
+            if (!state.video) {
+                showModal('Inget videoklipp', 'Du måste ladda ett videoklipp innan du kan lägga till bilder på tidslinjen.');
+                return;
+            }
+            const imageId = e.target.parentElement.dataset.imageId;
+            addImageToTimeline(imageId, videoPreview.currentTime);
+        }
+    });
+
+    function addImageToTimeline(imageId, startTime) {
+        const imageInfo = state.images.find(i => i.id === imageId);
+        if (!imageInfo) return;
+        const duration = 5;
+        const start = Math.max(state.trimStart, Math.min(startTime, state.trimEnd - duration));
+        const imgElement = document.createElement('img');
+        imgElement.src = imageInfo.url;
+        imgElement.className = 'image-on-timeline';
+        imgElement.dataset.timelineId = `tl_${imageId}_${Date.now()}`;
+        imgElement.style.left = `${(start / state.videoDuration) * 100}%`;
+        imgElement.style.width = `${(duration / state.videoDuration) * 100}%`;
+        imageTrack.appendChild(imgElement);
+        state.imagesOnTimeline.push({ id: imageId, start: start, duration: duration, element: imgElement });
+    }
+    
+    // --- EXPORT ---
+    exportButton.addEventListener('click', () => {
+        showModal('Exportfunktion', 'Detta är en demonstration. Att faktiskt rendera och exportera en video är en mycket beräkningsintensiv process som normalt kräver specialiserade bibliotek (t.ex. FFmpeg via WebAssembly).');
+    });
+});
+</script>
+
+</body>
+</html>
+
